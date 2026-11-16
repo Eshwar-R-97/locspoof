@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Location Picker</title>
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23222'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23FA5D29'/%3E%3C/svg%3E">
+</head>
+<body>
+  <div id="map" aria-label="Map"></div>
+
+  <aside id="panel" class="panel" aria-label="Controls">
+    <button id="sheet-handle" class="sheet-handle" aria-label="Collapse panel" aria-expanded="true"><span></span></button>
+
+    <header class="panel-head">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">Location Picker</span>
+      </div>
+      <div id="conn" class="conn" data-state="reconnecting" title="Connection">
+        <span class="dot"></span><span id="conn-label">Connecting</span>
+      </div>
+    </header>
+
+    <div id="resume" class="banner" hidden>
+      <div>
+        <div class="label">Previous session</div>
+        <div id="resume-text" class="banner-text"></div>
+      </div>
+      <div class="banner-actions">
+        <button id="resume-yes" class="btn btn-ink btn-sm">Resume</button>
+        <button id="resume-no" class="btn btn-ghost btn-sm">Dismiss</button>
+      </div>
+    </div>
+
+    <div id="warn" class="banner banner-warn" hidden></div>
+
+    <div class="search">
+      <svg class="search-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg>
+      <input id="search" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Search a place or paste 41.8781, -87.6298" aria-label="Search">
+      <ul id="results" class="results" role="listbox" hidden></ul>
+    </div>
+
+    <section class="status" aria-live="polite">
+      <div class="status-row">
+        <span class="label">Mode</span>
+        <span id="st-mode" class="mode-chip">Idle</span>
+        <span id="st-coords" class="mono st-coords">Real GPS</span>
+      </div>
+      <div id="st-travel" class="travel-status" hidden>
+        <div class="bar"><span id="st-bar"></span></div>
+        <div class="travel-stats">
+          <span><b id="st-left">—</b> left</span>
+          <span>ETA <b id="st-eta">—</b></span>
+          <span id="st-speed" class="mono">—</span>
+        </div>
+      </div>
+      <div id="st-extra" class="status-extra" hidden></div>
+    </section>
+
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="teleport" aria-selected="true">Teleport</button>
+      <button role="tab" data-tab="travel" aria-selected="false">Travel</button>
+      <button role="tab" data-tab="wander" aria-selected="false">Wander</button>
+    </nav>
+
+    <!-- Teleport -->
+    <section class="tab-pane" data-pane="teleport">
+      <div class="pin-readout">
+        <span class="label">Pin</span>
+        <span id="tp-pin" class="mono">Click the map, search, or pick a spot</span>
+      </div>
+      <label class="switch-row">
+        <input id="tp-wander" type="checkbox">
+        <span class="switch" aria-hidden="true"></span>
+        <span>Wander after teleport</span>
+      </label>
+      <button id="tp-go" class="btn btn-ink btn-block" disabled>Teleport to pin <kbd>T</kbd></button>
+    </section>
+
+    <!-- Travel -->
+    <section class="tab-pane" data-pane="travel" hidden>
+      <div id="tr-start" class="field" hidden>
+        <span class="label">Start from</span>
+        <div class="row">
+          <select id="tr-start-spot" aria-label="Start spot"><option value="">Choose a spot…</option></select>
+          <button id="tr-start-pick" class="btn btn-line btn-sm">Pick on map</button>
+        </div>
+        <div id="tr-start-text" class="hint"></div>
+      </div>
+
+      <div class="field">
+        <span class="label">Route</span>
+        <ol id="tr-stops" class="stops"></ol>
+        <button id="tr-add-stop" class="link-btn" disabled>＋ Add pin as a stop</button>
+      </div>
+
+      <div class="field">
+        <span class="label">Speed</span>
+        <div class="seg" id="tr-profiles" role="radiogroup">
+          <button data-p="walk" aria-checked="true">Walk</button>
+          <button data-p="bike">Bike</button>
+          <button data-p="drive">Drive</button>
+          <button data-p="highway">Highway</button>
+          <button data-p="custom">Custom</button>
+        </div>
+        <div id="tr-custom" class="slider-row" hidden>
+          <input id="tr-speed" type="range" min="0.5" max="60" step="0.1" value="8" aria-label="Custom speed">
+          <span id="tr-speed-val" class="mono"></span>
+        </div>
+      </div>
+
+      <div class="toggles">
+        <label class="switch-row"><input id="tr-real" type="checkbox" checked><span class="switch"></span><span>Realistic speed</span></label>
+        <label class="switch-row"><input id="tr-match" type="checkbox"><span class="switch"></span><span>Match route's estimated time</span></label>
+        <label class="switch-row"><input id="tr-wander" type="checkbox"><span class="switch"></span><span>Wander on arrival</span></label>
+      </div>
+
+      <div id="tr-preview" class="preview" hidden>
+        <div id="tr-summary" class="preview-summary"></div>
+        <div id="tr-route-warn" class="hint hint-warn" hidden></div>
+        <button id="tr-straight" class="btn btn-line btn-sm" hidden>Use a straight line instead</button>
+      </div>
+
+      <div class="row gap">
+        <button id="tr-go" class="btn btn-ink btn-grow" disabled>Start</button>
+        <button id="tr-pause" class="btn btn-line" hidden>Pause</button>
+        <button id="tr-stop" class="btn btn-line" hidden>Stop <kbd>Esc</kbd></button>
+      </div>
+    </section>
+
+    <!-- Wander -->
+    <section class="tab-pane" data-pane="wander" hidden>
+      <label class="switch-row big">
+        <input id="wd-on" type="checkbox">
+        <span class="switch"></span>
+        <span>Wander around the current spot</span>
+      </label>
+      <div class="field">
+        <span class="label">Style</span>
+        <div class="seg seg-wrap" id="wd-presets" role="radiogroup">
+          <button data-preset="default" aria-checked="true">Standing around</button>
+          <button data-preset="indoors">Indoors</button>
+          <button data-preset="walking">Walking around</button>
+          <button data-preset="drift">GPS drift only</button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="label">Radius</span>
+        <div class="slider-row">
+          <input id="wd-radius" type="range" min="2" max="500" step="1" value="20" aria-label="Wander radius">
+          <span id="wd-radius-val" class="mono">20 m</span>
+        </div>
+      </div>
+      <p class="hint">Smooth, bounded movement that reads like a real phone. While travelling, this applies on arrival.</p>
+    </section>
+
+    <!-- Spots -->
+    <section class="spots">
+      <div class="spots-head">
+        <span class="label">Saved spots</span>
+        <div class="spots-tools">
+          <a id="sp-export" class="link-btn" href="/api/spots/export" download>Export</a>
+          <button id="sp-import" class="link-btn">Import</button>
+          <input id="sp-import-file" type="file" accept="application/json,.json" hidden>
+        </div>
+      </div>
+      <div id="chips" class="chips"></div>
+      <form id="sp-form" class="save-form" hidden>
+        <input id="sp-emoji" class="emoji-in" maxlength="8" placeholder="📍" aria-label="Emoji">
+        <input id="sp-name" maxlength="40" placeholder="Name this pin" aria-label="Spot name" required>
+        <button class="btn btn-ink btn-sm" type="submit">Save</button>
+        <button class="btn btn-ghost btn-sm" type="button" id="sp-cancel">Cancel</button>
+      </form>
+    </section>
+
+    <footer class="panel-foot">
+      <button id="reset" class="btn btn-reset btn-block">Reset to real location <kbd>R</kbd></button>
+      <div class="foot-meta">
+        <span id="device" class="mono"></span>
+        <span class="keys">T teleport · Space pause · Esc stop</span>
+      </div>
+    </footer>
+  </aside>
+
+  <div id="spot-menu" class="menu" role="menu" hidden>
+    <button data-act="rename" role="menuitem">Rename</button>
+    <button data-act="move" role="menuitem">Move to pin</button>
+    <button data-act="start" role="menuitem">Set as start</button>
+    <button data-act="delete" role="menuitem" class="danger">Delete</button>
+  </div>
+
+  <div id="dialog" class="dialog" role="dialog" aria-modal="true" hidden>
+    <div class="dialog-card">
+      <div id="dialog-title" class="dialog-title"></div>
+      <div id="dialog-body" class="dialog-body"></div>
+      <div class="row gap end">
+        <button id="dialog-no" class="btn btn-line">Cancel</button>
+        <button id="dialog-yes" class="btn btn-reset">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="assertive"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
