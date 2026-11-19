@@ -244,7 +244,7 @@ async def test_travel_too_fast_or_bad_path_rejected():
     eng, fb, clock = make()
     await eng.step()
     with pytest.raises(EngineError):
-        await eng.start_travel(straight(HOME, 10), 100)
+        await eng.start_travel(straight(HOME, 10), 1001)
     with pytest.raises(EngineError):
         await eng.start_travel([HOME], 5)
     with pytest.raises(EngineError):

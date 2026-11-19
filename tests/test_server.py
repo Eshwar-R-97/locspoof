@@ -117,7 +117,7 @@ async def test_travel_flow(ctx):
 @pytest.mark.parametrize("body", [
     {"path": [[0, 0]], "speed_mps": 5},
     {"path": [[0, 0], [0, 1]], "speed_mps": 0},
-    {"path": [[0, 0], [0, 1]], "speed_mps": 61},
+    {"path": [[0, 0], [0, 1]], "speed_mps": 1001},
     {"path": [[0, 0], [100, 1]], "speed_mps": 5},
     {"path": [[0, 0], [0, 1]], "speed_mps": 5, "profile": "rocket"},
     {"path": [[0, 179.9], [0, -179.9]], "speed_mps": 5},

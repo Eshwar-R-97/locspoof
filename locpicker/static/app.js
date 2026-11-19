@@ -430,6 +430,15 @@
     return null;
   }
 
+  // Custom speed slider is logarithmic so 0.5–1000 m/s (≈1–2237 mph) stays usable at the low end.
+  const CUSTOM_MIN = 0.5, CUSTOM_MAX = 1000;
+  const sliderToSpeed = (x) => {
+    const v = CUSTOM_MIN * Math.pow(CUSTOM_MAX / CUSTOM_MIN, x / 1000);
+    return v < 10 ? Math.round(v * 10) / 10 : Math.round(v);
+  };
+  const speedToSlider = (v) =>
+    Math.round(1000 * Math.log(Math.min(CUSTOM_MAX, Math.max(CUSTOM_MIN, v)) / CUSTOM_MIN) / Math.log(CUSTOM_MAX / CUSTOM_MIN));
+
   function travelSpeed() {
     if (S.profile === "custom") return S.customSpeed;
     return SPEEDS[S.profile];
@@ -440,7 +449,7 @@
     if (S.matchTime && S.preview && !S.preview.straight && S.preview.duration > 0) {
       v = S.preview.distance / S.preview.duration;
     }
-    return Math.min(60, Math.max(0.1, v));
+    return Math.min(1000, Math.max(0.1, v));
   }
 
   function renderStops() {
@@ -483,7 +492,7 @@
 
     $$("#tr-profiles button").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.p === S.profile)));
     $("#tr-custom").hidden = S.profile !== "custom";
-    $("#tr-speed").value = S.customSpeed;
+    $("#tr-speed").value = speedToSlider(S.customSpeed);
     $("#tr-speed-val").textContent = fmtSpeed(+S.customSpeed);
     $("#tr-real").checked = S.realistic;
     $("#tr-match").checked = S.matchTime;
@@ -527,7 +536,7 @@
     S.profile = b.dataset.p; store.set("profile", S.profile);
     renderTravel(); schedulePreview();
   }));
-  $("#tr-speed").addEventListener("input", (e) => { S.customSpeed = +e.target.value; store.set("customSpeed", S.customSpeed); renderTravel(); });
+  $("#tr-speed").addEventListener("input", (e) => { S.customSpeed = sliderToSpeed(+e.target.value); store.set("customSpeed", S.customSpeed); renderTravel(); });
   $("#tr-real").addEventListener("change", (e) => { S.realistic = e.target.checked; store.set("realistic", S.realistic); });
   $("#tr-match").addEventListener("change", (e) => { S.matchTime = e.target.checked; store.set("matchTime", S.matchTime); renderSummary(); });
   $("#tr-wander").addEventListener("change", (e) => { S.wanderOnArrival = e.target.checked; store.set("wanderOnArrival", S.wanderOnArrival); });
