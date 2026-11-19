@@ -12,8 +12,9 @@ There's no jailbreak and nothing to install on the phone, and turning it off is 
 **Features**
 
 - **Teleport:** click the map, search a place, or paste coordinates
-- **Travel:** follow real roads at walk/bike/drive/highway or custom speed, with multiple stops, pause/resume,
-  live ETA, and optional realistic speed (traffic stops, slowing down on arrival)
+- **Travel:** follow real roads at walk/bike/drive/highway or custom speed (up to 1000 m/s ≈ 2237 mph), with
+  multiple stops, pause/resume, live ETA, and optional realistic speed (traffic stops, slowing down on arrival)
+- **Fly:** skip the roads and fly the shortest great-circle path between points, with take-off and landing
 - **Wander:** small natural movement around a spot (standing around, indoors, walking around, GPS drift)
 - **Saved spots:** name your favorite places; rename, move, delete, import/export
 - **Reset to real location** button, plus auto-restore when you quit
@@ -146,7 +147,7 @@ Turn on **Wander after teleport** to keep moving slightly instead of sitting per
 ### Travel
 1. Open the **Travel** tab. If you haven't teleported yet, choose where to **Start from** (a saved spot or *Pick on map*).
 2. Pick a destination (click, search, or tap a saved spot). Use **＋ Add pin as a stop** for stops along the way.
-3. Choose a speed: **Walk · Bike · Drive · Highway · Custom**. The panel shows the route and an estimate like
+3. Choose a speed: **Walk · Bike · Drive · Highway · Fly · Custom**. The panel shows the route and an estimate like
    *4.2 km · 9 min by car*.
 4. Optional:
    - **Realistic speed:** natural speed changes, traffic-light stops when driving, short pauses when walking.
@@ -155,6 +156,10 @@ Turn on **Wander after teleport** to keep moving slightly instead of sitting per
 5. Press **Start**. Use **Pause** / **Stop** (or `Space` / `Esc`) at any time.
 
 If road routing fails or is slow, you can choose **Use a straight line instead**.
+
+**Fly** ignores roads and follows the great-circle arc between your points (stops act as layovers). It has its own
+speed slider (default 250 m/s ≈ 560 mph, up to 1000 m/s); with *Realistic speed* on it ramps up on take-off and slows
+for landing. Flights that would cross the ±180° meridian (e.g. across the Pacific) aren't supported yet.
 
 ### Wander
 Turn it on in the **Wander** tab and pick a style:

@@ -453,3 +453,33 @@ async def test_snapshot_subscribers_get_updates():
     snap = q.get_nowait()
     assert snap["connection"] == "connected"
     eng.unsubscribe(q)
+
+
+async def test_fly_profile_ramps_up_and_down_and_arrives():
+    eng, fb, clock = make()
+    await eng.step()
+    far = geo.destination(HOME, 45, 200_000)  # 200 km hop
+    await eng.start_travel([HOME, far], 250, "fly", realistic=True)
+    assert eng.state.path is not None and len(eng.state.path) <= 202  # 1 km great-circle legs
+    speeds = []
+    for _ in range(2000):
+        clock.advance(1.0)
+        await eng.step()
+        speeds.append(eng.snapshot()["travel"]["current_speed"] if eng.state.mode == "travel" else None)
+        if eng.state.mode != "travel":
+            break
+    assert eng.state.mode != "travel"  # arrived
+    moving = [v for v in speeds if v is not None]
+    assert moving[0] < 50  # take-off roll, not instant cruise
+    assert max(moving) == pytest.approx(250, rel=0.05)
+    assert moving[-1] < 100  # landing
+    assert geo.haversine(eng.state.position, far) < 50
+
+
+async def test_fly_at_1000_mps_unrealistic_is_constant():
+    eng, fb, clock = make()
+    await eng.step()
+    await eng.start_travel([HOME, geo.destination(HOME, 90, 50_000)], 1000, "fly", realistic=False)
+    clock.advance(1.0)
+    await eng.step()
+    assert eng.snapshot()["travel"]["current_speed"] == 1000

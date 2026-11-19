@@ -20,7 +20,8 @@ from .geo import LatLon
 log = logging.getLogger("locpicker.engine")
 
 Mode = Literal["idle", "static", "travel", "wander", "paused"]
-Profile = Literal["walk", "bike", "drive", "custom"]
+Profile = Literal["walk", "bike", "drive", "fly", "custom"]
+PROFILES = ("walk", "bike", "drive", "fly", "custom")
 Connection = Literal["connected", "reconnecting", "no_device"]
 
 KEEPALIVE_S = 10.0
@@ -32,6 +33,8 @@ CONNECT_TIMEOUT = 30.0
 SPEED_MIN, SPEED_MAX = 0.1, 1000.0
 RADIUS_MIN, RADIUS_MAX = 2.0, 500.0
 PATH_MAX_POINTS = 20_000
+FLY_ACCEL = 1.5  # m/s² take-off/landing ramp for realistic flights
+FLY_RAMP_FRAC = 0.15  # each ramp covers at most this share of the route
 START_SNAP_M = 200.0
 
 
@@ -92,10 +95,13 @@ class EngineState:
 
 
 class SpeedModel:
-    """Realistic speed: slow drift (±10 %), drive deceleration + traffic stops, walk pauses."""
+    """Realistic speed: slow drift (±10 %), drive deceleration + traffic stops, walk pauses,
+    flight take-off/landing ramps."""
 
-    def __init__(self, base: float, profile: Profile, realistic: bool, rng: random.Random):
+    def __init__(self, base: float, profile: Profile, realistic: bool, rng: random.Random, total_m: float = 0.0):
         self.base, self.profile, self.realistic, self.rng = base, profile, realistic, rng
+        # Flights ramp up/down at FLY_ACCEL, steeper on short hops so each ramp stays under FLY_RAMP_FRAC.
+        self.fly_accel = max(FLY_ACCEL, base * base / (2 * FLY_RAMP_FRAC * total_m)) if total_m > 0 else FLY_ACCEL
         self.factor = 1.0  # slow multiplicative drift around 1.0
         self.walk_delta = 0.0  # ±0.2 m/s for walking
         self.hold_until: Optional[float] = None
@@ -138,6 +144,11 @@ class SpeedModel:
                     return 0.0
             if remaining < 150:
                 v *= 0.4 + 0.6 * (remaining / 150.0)
+        elif self.profile == "fly":
+            # Cruise drift is gentler than on the ground (±3 %), plus take-off and landing ramps.
+            v = self.base * (1.0 + (self.factor - 1.0) * 0.3)
+            a = self.fly_accel
+            v = min(v, max(math.sqrt(2 * a * traveled), 10.0), max(math.sqrt(2 * a * remaining), 5.0))
         return max(0.2 if self.profile == "drive" else 0.1, v)
 
 
@@ -455,8 +466,8 @@ class Engine:
         realistic: bool = True,
         traveled_m: float = 0.0,
     ) -> dict:
-        if profile not in ("walk", "bike", "drive", "custom"):
-            raise EngineError("bad_profile", "profile must be walk, bike, drive or custom")
+        if profile not in PROFILES:
+            raise EngineError("bad_profile", "profile must be walk, bike, drive, fly or custom")
         _check_speed(speed_mps)
         pts = validate_path(path)
         async with self._lock:
@@ -467,7 +478,7 @@ class Engine:
             pts = geo.dedupe(pts)
             if len(pts) > 5000:
                 pts = geo.simplify(pts, 3.0)
-            pts = geo.densify(pts, 100.0)
+            pts = geo.densify(pts, 1000.0 if profile == "fly" else 100.0)  # great-circle legs
             if len(pts) < 2:
                 raise EngineError("too_short", "The route is shorter than a few centimeters — already there.")
             cum = geo.cumulative_distances(pts)
@@ -483,7 +494,7 @@ class Engine:
             s.paused_from = None
             s.wander_center = None
             s.position = geo.point_at_distance(pts, cum, s.traveled_m)[0]
-            self._speed = SpeedModel(s.speed_mps, profile, s.realistic, self.rng)
+            self._speed = SpeedModel(s.speed_mps, profile, s.realistic, self.rng, s.total_m)
             self._last_tick = self.clock()
             return self._changed()
 

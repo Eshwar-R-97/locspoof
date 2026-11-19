@@ -342,6 +342,13 @@ def create_app(engine: Engine, spots: SpotStore, cfg: Config, *, start_engine: b
     app[CONFIG_KEY] = cfg
     app[TASKS_KEY] = []
 
+    async def revalidate_static(request, response):
+        # Make browsers re-check app.js/app.css on every load so updates never mix old and new files.
+        if request.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+
+    app.on_response_prepare.append(revalidate_static)
+
     r = app.router
     r.add_get("/", index)
     r.add_get("/api/status", status)

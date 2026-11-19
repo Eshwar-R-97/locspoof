@@ -6,7 +6,8 @@
   // ------------------------------------------------------------------ constants
 
   const SPEEDS = { walk: 1.4, bike: 5, drive: 11, highway: 27 };
-  const ENGINE_PROFILE = { walk: "walk", bike: "bike", drive: "drive", highway: "drive", custom: "custom" };
+  const ENGINE_PROFILE = { walk: "walk", bike: "bike", drive: "drive", highway: "drive", fly: "fly", custom: "custom" };
+  const SLIDER_PROFILES = { fly: "flySpeed", custom: "customSpeed" }; // profiles whose speed comes from the slider
   const OSRM = {
     walk: "https://routing.openstreetmap.de/routed-foot/route/v1/foot/",
     bike: "https://routing.openstreetmap.de/routed-bike/route/v1/bike/",
@@ -17,7 +18,7 @@
   const NOMINATIM = "https://nominatim.openstreetmap.org/search";
   const MODE_LABEL = { idle: "Idle", static: "Holding", travel: "Travelling", wander: "Wandering", paused: "Paused" };
   const CONN_LABEL = { connected: "Connected", reconnecting: "Reconnecting", no_device: "No device", offline: "Server offline" };
-  const PROFILE_NOUN = { walk: "on foot", bike: "by bike", drive: "by car", highway: "on the highway", custom: "at custom speed" };
+  const PROFILE_NOUN = { walk: "on foot", bike: "by bike", drive: "by car", highway: "on the highway", fly: "by air", custom: "at custom speed" };
 
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -55,6 +56,7 @@
     tab: store.get("tab", "teleport"),
     profile: store.get("profile", "walk"),
     customSpeed: store.get("customSpeed", 8),
+    flySpeed: store.get("flySpeed", 250),   // ≈ 560 mph, airliner cruise
     realistic: store.get("realistic", true),
     matchTime: store.get("matchTime", false),
     wanderOnArrival: store.get("wanderOnArrival", false),
@@ -172,6 +174,30 @@
     for (let i = 1; i < path.length; i++) c.push(c[i - 1] + hav(path[i - 1], path[i]));
     return c;
   }
+  // Points along the great circle a→b (what the engine flies), so the preview arc matches reality.
+  function greatCircle(a, b, n) {
+    const [p1, l1, p2, l2] = [rad(a[0]), rad(a[1]), rad(b[0]), rad(b[1])];
+    const d = hav(a, b) / R;
+    if (d < 1e-9) return [a, b];
+    const out = [];
+    for (let i = 0; i <= n; i++) {
+      const f = i / n, A = Math.sin((1 - f) * d) / Math.sin(d), B = Math.sin(f * d) / Math.sin(d);
+      const x = A * Math.cos(p1) * Math.cos(l1) + B * Math.cos(p2) * Math.cos(l2);
+      const y = A * Math.cos(p1) * Math.sin(l1) + B * Math.cos(p2) * Math.sin(l2);
+      const z = A * Math.sin(p1) + B * Math.sin(p2);
+      out.push([Math.atan2(z, Math.hypot(x, y)) * 180 / Math.PI, Math.atan2(y, x) * 180 / Math.PI]);
+    }
+    return out;
+  }
+  function flightPath(wps) {
+    const out = [wps[0]];
+    for (let i = 1; i < wps.length; i++) {
+      const n = Math.min(256, Math.max(1, Math.ceil(hav(wps[i - 1], wps[i]) / 5000)));
+      out.push(...greatCircle(wps[i - 1], wps[i], n).slice(1));
+    }
+    return out;
+  }
+
   function splitAt(path, cum, d) {
     if (!path || path.length < 2) return [path || [], []];
     if (d <= 0) return [[path[0]], path];
@@ -440,7 +466,7 @@
     Math.round(1000 * Math.log(Math.min(CUSTOM_MAX, Math.max(CUSTOM_MIN, v)) / CUSTOM_MIN) / Math.log(CUSTOM_MAX / CUSTOM_MIN));
 
   function travelSpeed() {
-    if (S.profile === "custom") return S.customSpeed;
+    if (SLIDER_PROFILES[S.profile]) return S[SLIDER_PROFILES[S.profile]];
     return SPEEDS[S.profile];
   }
 
@@ -491,9 +517,12 @@
     $("#tr-start-pick").textContent = S.pickStart ? "Cancel" : "Pick on map";
 
     $$("#tr-profiles button").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.p === S.profile)));
-    $("#tr-custom").hidden = S.profile !== "custom";
-    $("#tr-speed").value = speedToSlider(S.customSpeed);
-    $("#tr-speed-val").textContent = fmtSpeed(+S.customSpeed);
+    const sliderKey = SLIDER_PROFILES[S.profile];
+    $("#tr-custom").hidden = !sliderKey;
+    if (sliderKey) {
+      $("#tr-speed").value = speedToSlider(S[sliderKey]);
+      $("#tr-speed-val").textContent = fmtSpeed(+S[sliderKey]);
+    }
     $("#tr-real").checked = S.realistic;
     $("#tr-match").checked = S.matchTime;
     $("#tr-wander").checked = S.wanderOnArrival;
@@ -528,7 +557,8 @@
     sm.textContent = PROFILE_NOUN[S.profile] + (S.matchTime && !p.straight ? " (route's time)" : "");
     sum.appendChild(sm);
     $("#tr-route-warn").hidden = !p.straight;
-    $("#tr-route-warn").textContent = p.straight ? "Straight line — ignores roads, buildings and water." : "";
+    $("#tr-route-warn").textContent = p.fly ? "Flight path — flies the shortest great-circle line, ignoring roads."
+      : p.straight ? "Straight line — ignores roads, buildings and water." : "";
     $("#tr-straight").hidden = true;
   }
 
@@ -536,7 +566,11 @@
     S.profile = b.dataset.p; store.set("profile", S.profile);
     renderTravel(); schedulePreview();
   }));
-  $("#tr-speed").addEventListener("input", (e) => { S.customSpeed = sliderToSpeed(+e.target.value); store.set("customSpeed", S.customSpeed); renderTravel(); });
+  $("#tr-speed").addEventListener("input", (e) => {
+    const k = SLIDER_PROFILES[S.profile];
+    if (!k) return;
+    S[k] = sliderToSpeed(+e.target.value); store.set(k, S[k]); renderTravel();
+  });
   $("#tr-real").addEventListener("change", (e) => { S.realistic = e.target.checked; store.set("realistic", S.realistic); });
   $("#tr-match").addEventListener("change", (e) => { S.matchTime = e.target.checked; store.set("matchTime", S.matchTime); renderSummary(); });
   $("#tr-wander").addEventListener("change", (e) => { S.wanderOnArrival = e.target.checked; store.set("wanderOnArrival", S.wanderOnArrival); });
@@ -566,7 +600,8 @@
     if (s && (s.mode === "travel" || (s.mode === "paused" && s.paused_from === "travel"))) { previewLine.remove(); return; }
     const wps = waypoints();
     if (!wps) { S.preview = null; previewLine.remove(); renderTravel(); return; }
-    const router = S.profile === "walk" ? "walk" : S.profile === "bike" ? "bike" : "drive";
+    const fly = S.profile === "fly";
+    const router = fly ? "fly" : S.profile === "walk" ? "walk" : S.profile === "bike" ? "bike" : "drive";
     const key = router + "|" + wps.map((p) => p[0].toFixed(6) + "," + p[1].toFixed(6)).join(";") + (forceStraight ? "|straight" : "");
     if (S.preview && S.preview.key === key && !S.preview.error && !S.preview.loading) { renderTravel(); return; }
     if (wps.some((p, i) => i && Math.abs(p[1] - wps[i - 1][1]) > 180)) {
@@ -574,6 +609,11 @@
       renderTravel(); return;
     }
     const seq = ++S.previewSeq;
+    if (fly) {
+      const path = flightPath(wps);
+      setPreview({ key, path, distance: cumulative(path).pop(), duration: null, straight: true, fly: true });
+      return;
+    }
     if (forceStraight) {
       setPreview({ key, path: wps, distance: cumulative(wps).pop(), duration: null, straight: true });
       return;
